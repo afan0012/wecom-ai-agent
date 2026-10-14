@@ -49,7 +49,7 @@ py -m venv .venv
 .\.venv\Scripts\uvicorn.exe app.main:app --host 127.0.0.1 --port 8000
 ```
 
-打开 `http://127.0.0.1:8000/docs`，或者调用 `POST /demo/chat`。未配置模型 Key 时，服务只会返回安全的身份说明，不会连接企业微信。
+打开 `http://127.0.0.1:8000/docs`。`POST /demo/chat` 默认不存在，避免公网调用模型消耗额度；仅限本机临时调试时，在 `.env` 设置 `ENABLE_DEMO_API=true` 后再调用。未配置模型 Key 时，服务只会返回安全的身份说明，不会连接企业微信。
 
 ## 生产部署顺序
 

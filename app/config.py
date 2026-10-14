@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     wecom_state_db: str = "data/wecom_state.db"
     vision_max_image_bytes: int = 5 * 1024 * 1024
     image_followup_seconds: float = 2.5
+    # The interactive demo endpoint can invoke the paid model.  Keep it off in
+    # every deployed environment unless a developer explicitly opts in.
+    enable_demo_api: bool = False
 
 
 settings = Settings()

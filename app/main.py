@@ -107,12 +107,15 @@ async def healthz() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.post("/demo/chat")
-async def demo_chat(body: DemoQuestion) -> dict:
-    answer = await answer_question(body.question, body.customer_id)
-    if answer.score < settings.handoff_threshold:
-        return {"reply": "我暂时无法确认这个问题，已为您转人工客服处理。", "handoff": True, "sources": []}
-    return {"reply": answer.text, "handoff": False, "sources": answer.sources}
+if settings.enable_demo_api:
+
+    @app.post("/demo/chat")
+    async def demo_chat(body: DemoQuestion) -> dict:
+        """Local-development convenience endpoint; disabled by default."""
+        answer = await answer_question(body.question, body.customer_id)
+        if answer.score < settings.handoff_threshold:
+            return {"reply": "我暂时无法确认这个问题，已为您转人工客服处理。", "handoff": True, "sources": []}
+        return {"reply": answer.text, "handoff": False, "sources": answer.sources}
 
 
 @app.get("/webhooks/wecom/kf", response_class=PlainTextResponse)
