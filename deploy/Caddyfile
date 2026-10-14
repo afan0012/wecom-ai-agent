@@ -1,0 +1,5 @@
+# Replace bot.example.com with your real callback domain before deployment.
+bot.example.com {
+    encode zstd gzip
+    reverse_proxy 127.0.0.1:8000
+}
