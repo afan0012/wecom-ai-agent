@@ -5,6 +5,7 @@ description = "Self-hosted WeCom customer-service AI agent with an auditable Mar
 requires-python = ">=3.11"
 dependencies = [
   "cryptography>=43.0.0",
+  "defusedxml>=0.7",
   "fastapi>=0.115.0",
   "httpx>=0.27.0",
   "pydantic-settings>=2.6.0",

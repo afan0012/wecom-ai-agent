@@ -2,8 +2,9 @@ import asyncio
 import base64
 import logging
 import time
-import xml.etree.ElementTree as ET
+from xml.etree.ElementTree import Element, ParseError
 
+from defusedxml.ElementTree import fromstring as defused_fromstring
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
@@ -33,7 +34,7 @@ def _crypto() -> WeComCrypto:
     return WeComCrypto(settings.wecom_token, settings.wecom_encoding_aes_key, settings.wecom_corp_id)
 
 
-def _element_text(root: ET.Element, name: str) -> str:
+def _element_text(root: Element, name: str) -> str:
     return root.findtext(name, default="")
 
 
@@ -206,18 +207,18 @@ async def receive_wecom_message(
 ) -> str:
     body = await request.body()
     try:
-        encrypted_xml = ET.fromstring(body)
+        encrypted_xml = defused_fromstring(body)
         encrypted = _element_text(encrypted_xml, "Encrypt")
         crypto = _crypto()
         if not crypto.verify_signature(msg_signature, timestamp, nonce, encrypted):
             raise HTTPException(status_code=403, detail="签名校验失败")
         message_xml = crypto.decrypt(encrypted)
-    except ET.ParseError as exc:
+    except ParseError as exc:
         raise HTTPException(status_code=400, detail="无效 XML") from exc
     except WeComCryptoError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
-    message = ET.fromstring(message_xml)
+    message = defused_fromstring(message_xml)
     if _element_text(message, "MsgType") != "event" or _element_text(message, "Event") != "kf_msg_or_event":
         return "success"
     callback_token = _element_text(message, "Token")

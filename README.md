@@ -42,7 +42,7 @@ Caddy（HTTPS） → FastAPI 服务 → SQLite（游标 / 去重）
 
 ```powershell
 Copy-Item .env.example .env
-python -m venv .venv
+py -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e .
 .\.venv\Scripts\uvicorn.exe app.main:app --host 127.0.0.1 --port 8000
 ```
