@@ -7,6 +7,12 @@ __pycache__/
 data/
 output/
 tools/
+knowledge/drafts/*
+!knowledge/drafts/.gitkeep
+knowledge/private/*
+!knowledge/private/.gitkeep
+knowledge/approved/*
+!knowledge/approved/profile-template.md
 *.png
 *.jpg
 *.jpeg

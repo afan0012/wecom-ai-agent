@@ -2,6 +2,7 @@ import asyncio
 import base64
 import logging
 import time
+from dataclasses import dataclass
 from xml.etree.ElementTree import Element, ParseError
 
 from defusedxml.ElementTree import fromstring as defused_fromstring
@@ -20,9 +21,17 @@ logger = logging.getLogger(__name__)
 app = FastAPI(title="企业微信客服 AI Agent", version="0.2.0")
 wecom_state = WeComState(settings.wecom_state_db)
 _sync_locks: dict[str, asyncio.Lock] = {}
-_pending_images: dict[tuple[str, str], tuple[float, str]] = {}
+
+
+@dataclass
+class PendingImage:
+    expires_at: float
+    data_url: str
+    task: asyncio.Task[None] | None = None
+
+
+_pending_images: dict[tuple[str, str], PendingImage] = {}
 _IMAGE_TTL_SECONDS = 10 * 60
-_MAX_VISION_IMAGE_BYTES = 5 * 1024 * 1024
 
 
 class DemoQuestion(BaseModel):
@@ -43,16 +52,54 @@ def _sync_lock(open_kfid: str) -> asyncio.Lock:
     return _sync_locks.setdefault(open_kfid, asyncio.Lock())
 
 
-def _store_pending_image(customer_id: str, open_kfid: str, data_url: str) -> None:
-    _pending_images[(customer_id, open_kfid)] = (time.monotonic() + _IMAGE_TTL_SECONDS, data_url)
+def _store_pending_image(customer_id: str, open_kfid: str, data_url: str) -> PendingImage:
+    key = (customer_id, open_kfid)
+    old = _pending_images.pop(key, None)
+    if old and old.task:
+        old.task.cancel()
+    pending = PendingImage(time.monotonic() + _IMAGE_TTL_SECONDS, data_url)
+    _pending_images[key] = pending
+    return pending
 
 
 def _take_pending_image(customer_id: str, open_kfid: str) -> str | None:
     pending = _pending_images.pop((customer_id, open_kfid), None)
     if not pending:
         return None
-    expires_at, data_url = pending
-    return data_url if time.monotonic() < expires_at else None
+    current_task = asyncio.current_task()
+    if pending.task and pending.task is not current_task:
+        pending.task.cancel()
+    return pending.data_url if time.monotonic() < pending.expires_at else None
+
+
+async def _send_agent_reply(customer_id: str, open_kfid: str, question: str, image_data_url: str | None = None) -> None:
+    answer = await answer_question(question, customer_id, image_data_url)
+    reply = answer.text if answer.score >= settings.handoff_threshold else "我暂时无法确认这个问题，已为您转人工客服处理。"
+    await wecom_kf_client.send_text(customer_id, open_kfid, reply)
+
+
+async def _reply_to_standalone_image(customer_id: str, open_kfid: str, pending: PendingImage) -> None:
+    """Answer an image alone, but let an immediately following text explain it."""
+    try:
+        await asyncio.sleep(settings.image_followup_seconds)
+        async with _sync_lock(open_kfid):
+            key = (customer_id, open_kfid)
+            if _pending_images.get(key) is not pending:
+                return
+            image_data_url = _take_pending_image(customer_id, open_kfid)
+            if not image_data_url:
+                return
+            await _send_agent_reply(
+                customer_id,
+                open_kfid,
+                "请阅读这张图片。用一两句话概括其中能确认的文字、内容或关键信息；如果用户没有说明目标，请邀请对方补充想了解什么。",
+                image_data_url,
+            )
+            logger.info("已回复微信客服独立图片 customer=%s", customer_id)
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        logger.exception("处理微信客服独立图片失败")
 
 
 @app.get("/healthz")
@@ -128,7 +175,7 @@ async def _process_wecom_kf_event(callback_token: str, open_kfid: str) -> None:
                     else:
                         try:
                             image_bytes, content_type = await wecom_kf_client.download_media(media_id)
-                            if len(image_bytes) > _MAX_VISION_IMAGE_BYTES:
+                            if len(image_bytes) > settings.vision_max_image_bytes:
                                 logger.warning(
                                     "微信客服图片超过视觉模型上限 msgid=%s bytes=%s",
                                     message_id,
@@ -136,7 +183,10 @@ async def _process_wecom_kf_event(callback_token: str, open_kfid: str) -> None:
                                 )
                             else:
                                 data_url = f"data:{content_type};base64," + base64.b64encode(image_bytes).decode("ascii")
-                                _store_pending_image(customer_id, item_open_kfid, data_url)
+                                pending = _store_pending_image(customer_id, item_open_kfid, data_url)
+                                pending.task = asyncio.create_task(
+                                    _reply_to_standalone_image(customer_id, item_open_kfid, pending)
+                                )
                                 logger.info(
                                     "已暂存微信客服题图 msgid=%s bytes=%s",
                                     message_id,
@@ -181,10 +231,8 @@ async def _process_wecom_kf_event(callback_token: str, open_kfid: str) -> None:
                     len(content),
                     bool(image_data_url),
                 )
-                answer = await answer_question(content, customer_id, image_data_url)
-                reply = answer.text if answer.score >= settings.handoff_threshold else "我暂时无法确认这个问题，已为您转人工客服处理。"
                 try:
-                    await wecom_kf_client.send_text(customer_id, item_open_kfid, reply)
+                    await _send_agent_reply(customer_id, item_open_kfid, content, image_data_url)
                 except Exception:
                     # A message-count error must not be retried on every future
                     # callback; the customer's next message opens a fresh quota.

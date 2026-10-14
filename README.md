@@ -12,8 +12,9 @@
 - 校验回调签名、解密回调、持久化同步游标和消息去重；
 - 调用智谱 GLM 的 OpenAI 兼容接口；
 - 按企业微信单条 **2048 UTF-8 字节**限制自动拆分长回复，最多发送 5 条；
-- 读取 `knowledge/approved/` 中人工审核的 Markdown，并按关键词挑选相关资料供模型参考；
-- 支持将客户先发的图片暂存，并随下一条文本一起交给支持视觉的模型；
+- 读取 `knowledge/approved/` 中人工审核且标记为可对外使用的 Markdown，并按关键词挑选相关资料供模型参考；
+- 提供 `drafts → 人工审核 → approved` 的个人知识库工作流，草稿、私密资料和实际知识库文件不会进入 Git；
+- 支持图片理解：客户单独发图会得到简洁识图回复；若紧接着补充文字，图片和文字会一起交给支持视觉的模型；图片只在内存中短暂保存；
 - 使用 systemd 保活，使用 Caddy 自动申请 HTTPS 证书。
 
 ## 不做什么
@@ -22,6 +23,7 @@
 - 不冒充主人，不编造报价、订单、合作、行程或联系方式；
 - 不自动实现真实人工转接。企业微信接待人员和会话分配规则需按业务自行配置；
 - 不把 `knowledge/drafts/` 中的资料交给模型。
+- 不把图片资料做成可检索的视觉知识库；这需要独立的多模态索引，适合后续接入 WeKnora、MaxKB 等平台。
 
 ## 架构
 
@@ -57,7 +59,7 @@ py -m venv .venv
 4. 填写企业微信回调 URL、Token、EncodingAESKey；
 5. 将密钥写进服务器 `.env`，启动服务；
 6. 用测试微信账号验证回调、消息回复、长回复拆分和服务重启；
-7. 审核资料后放入 `knowledge/approved/`。
+7. 将个人 Markdown/TXT 资料先导入 `knowledge/drafts/`，审核后再放入 `knowledge/approved/`。
 
 逐项入口、填写内容与验收方式见：
 
@@ -65,6 +67,7 @@ py -m venv .venv
 - [真实搭建复盘与踩坑](docs/真实搭建复盘与踩坑.md)
 - [企业微信后台配置](docs/企业微信后台配置.md)
 - [知识库审核规则](knowledge/README.md)
+- [个人知识库导入与验收](docs/个人知识库导入与验收.md)
 - [排障手册](docs/排障手册.md)
 
 ## 配置
@@ -78,6 +81,8 @@ py -m venv .venv
 | `ZHIPU_API_KEY` | 调用 GLM；不填则退回本地兜底说明 |
 | `BOT_NAME` / `BOT_OWNER_NAME` | 机器人对外身份 |
 | `KNOWLEDGE_BASE_DIR` | 已审核知识库目录，默认 `knowledge/approved` |
+| `VISION_MAX_IMAGE_BYTES` | 单张客户图片的最大字节数，默认 5 MiB |
+| `IMAGE_FOLLOWUP_SECONDS` | 客户单独发图后等待补充文字的秒数，默认 2.5 秒 |
 | `RAG_API_URL` | 可选的外部 RAG 服务接口 |
 
 ## 上线前检查

@@ -16,10 +16,13 @@ class Settings(BaseSettings):
     bot_owner_name: str = "本人"
     knowledge_base_dir: str = "knowledge/approved"
     knowledge_max_chars: int = 6000
+    knowledge_max_chunks: int = 6
     rag_api_url: str = ""
     rag_api_token: str = ""
     handoff_threshold: float = 0.62
     wecom_state_db: str = "data/wecom_state.db"
+    vision_max_image_bytes: int = 5 * 1024 * 1024
+    image_followup_seconds: float = 2.5
 
 
 settings = Settings()
